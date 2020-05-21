@@ -4,14 +4,14 @@ import random
 from utils import Tile
 from operator import itemgetter
 
-MAX_INDEX = 4
+MAX_INDEX = 8
 
 class myPlayer(AdvancePlayer):
 	def __init__(self, _id):
 		super().__init__(_id)
 
 	def SelectMove(self, moves, game_state):
-		return min_max_search(Azul, State(game_state), 6, self.id)
+		return min_max_search(Azul, State(game_state), 4, self.id)
 
 class State:
 	def __init__(self, game_state):

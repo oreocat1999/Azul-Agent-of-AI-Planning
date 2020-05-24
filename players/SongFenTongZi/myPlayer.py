@@ -163,7 +163,7 @@ def sort_move(moves, player):
 				score_inc += 2 + left + right + above + below
 				if (above == 0 and below == 0) or (left == 0 and right == 0):
 					score_inc -= 1
-				score += score_inc + 1
+				score += score_inc + 2
 
 				flag = True
 				for c in range(grid_size):

@@ -3,6 +3,9 @@ from copy import deepcopy
 import random
 from utils import Tile
 from operator import itemgetter
+import sys
+
+sys.path.append('players/SongFenTongZi/')
 
 MAX_INDEX = 8
 
@@ -120,26 +123,69 @@ def _get_player_score(player):
 	return player.score + score_change + bonus
 
 def sort_move(moves, player):
-	score_dest = [3.6, 2.7, 1.8, 0.9, 0]
+	score_dest = [0.04, 0.03, 0.02, 0.01, 0]
 	move_list = []
 	length = len(moves)
+	penalty_index = 0
+	for i in range(len(player.floor)):
+		if player.floor[i] == 0:
+			penalty_index = i
+			break
 	for move in moves:
 		score = 0
-		pattern_line_dest = move[2].pattern_line_dest
+		grid_size = player.GRID_SIZE
+		row = move[2].pattern_line_dest
 		num_to_pattern_line = move[2].num_to_pattern_line
-		score -= move[2].num_to_floor_line
-		if pattern_line_dest != -1:
-			if num_to_pattern_line + player.lines_number[pattern_line_dest] == pattern_line_dest + 1:
-				score += 5
+		for i in range(move[2].num_to_floor_line):
+			if i + penalty_index < len(player.floor):
+				score += player.FLOOR_SCORES[i + penalty_index]
+		if row != -1:
+			if num_to_pattern_line + player.lines_number[row] == row + 1:
+				tc = move[2].tile_type
+				col = int(player.grid_scheme[row][tc])
+				score_inc = 0
+				above = 0
+				for c in range(col - 1, -1, -1):
+					if player.grid_state[row][c] == 0: break
+					else: above += 1
+				below = 0
+				for c in range(col + 1, grid_size, 1):
+					if player.grid_state[row][c] == 0: break
+					else: below += 1
+				left = 0
+				for r in range(row - 1, -1, -1):
+					if player.grid_state[r][col] == 0: break
+					else: left += 1
+				right = 0
+				for r in range(row + 1, grid_size, 1):
+					if player.grid_state[r][col] == 0: break
+					else: right += 1
+				score_inc += 2 + left + right + above + below
+				if (above == 0 and below == 0) or (left == 0 and right == 0):
+					score_inc -= 1
+				score += score_inc + 1
+
+				flag = True
+				for c in range(grid_size):
+					if c != col and player.grid_state[row][c] == 0: flag = False
+				if flag: score += player.ROW_BONUS
+
+				flag = True
+				for r in range(grid_size):
+					if r != row and player.grid_state[r][col] == 0: flag = False
+				if flag: score += player.COL_BONUS
+
+				if player.number_of[tc] == grid_size - 1: score += player.SET_BONUS
+
 			else:
-				score += num_to_pattern_line
-			score += score_dest[pattern_line_dest]
+				score += (4 - row + num_to_pattern_line + player.lines_number[row]) / 5
+			score += score_dest[row]
 		move_list.append((score, move))
 	move_list.sort(key = itemgetter(0), reverse = True)
 	moves = []
 	for i in range(min(MAX_INDEX, length)):
 		score, move = move_list[i]
-		moves.append((move, score))
+		moves.append(move)
 	return moves
 
 def min_max_search(Graph, state, depth_limit, player):
@@ -153,8 +199,7 @@ def _max_node_value(Graph, state, depth, depth_limit, player, alpha, beta):
 	moves = sort_move(moves, state.game_state.players[player])
 	best_move = random.choice(moves)
 	max_alpha = -float("inf")
-	for i in range(len(moves)):
-		move, score = moves[i]
+	for move in moves:
 		next_state, round_end = state.next_state(player, move)
 		if round_end or depth == depth_limit:
 			state_alpha = state_eval(Graph, next_state, player)
@@ -165,7 +210,7 @@ def _max_node_value(Graph, state, depth, depth_limit, player, alpha, beta):
 			best_move = move
 			alpha = max(alpha, state_alpha)
 			if alpha >= beta:
-				return best_move, beta
+				return best_move, alpha
 	return best_move, alpha
 
 def _min_node_value(Graph, state, depth, depth_limit, player, alpha, beta):
@@ -174,8 +219,7 @@ def _min_node_value(Graph, state, depth, depth_limit, player, alpha, beta):
 	moves = sort_move(moves, state.game_state.players[player])
 	best_move = random.choice(moves)
 	min_beta = float("inf")
-	for i in range(len(moves)):
-		move, score = moves[i]
+	for move in moves:
 		next_state, round_end = state.next_state(player, move)
 		if round_end or depth == depth_limit:
 			state_beta = state_eval(Graph, next_state, abs(1 - player))
@@ -186,5 +230,5 @@ def _min_node_value(Graph, state, depth, depth_limit, player, alpha, beta):
 			best_move = move
 			beta = min(beta, min_beta)
 			if beta <= alpha:
-				return best_move, alpha
+				return best_move, beta
 	return best_move, beta

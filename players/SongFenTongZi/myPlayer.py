@@ -123,27 +123,29 @@ def _get_player_score(player):
 	return player.score + score_change + bonus
 
 def sort_move(moves, player):
-	score_dest = [0.04, 0.03, 0.02, 0.01, 0]
+	score_dest = [0.03, 0.04, 0.02, 0.01, 0]
+	length_bonus = [1, 2, 3, 4, 5]
+	addition_floor_penalty = [-1.5, -2, -2, -2.5, -3, -3, 0]
 	move_list = []
 	length = len(moves)
-	penalty_index = 0
 	for i in range(len(player.floor)):
 		if player.floor[i] == 0:
 			penalty_index = i
 			break
+	else: penalty_index = len(player.floor) - 1
 	for move in moves:
 		score = 0
 		grid_size = player.GRID_SIZE
 		row = move[2].pattern_line_dest
 		num_to_pattern_line = move[2].num_to_pattern_line
-		for i in range(move[2].num_to_floor_line):
+		for i in range(1, move[2].num_to_floor_line):
 			if i + penalty_index < len(player.floor):
 				score += player.FLOOR_SCORES[i + penalty_index]
+		score += addition_floor_penalty[min(len(player.floor) - 1, penalty_index + move[2].num_to_floor_line)]
 		if row != -1:
 			if num_to_pattern_line + player.lines_number[row] == row + 1:
 				tc = move[2].tile_type
 				col = int(player.grid_scheme[row][tc])
-				score_inc = 0
 				above = 0
 				for c in range(col - 1, -1, -1):
 					if player.grid_state[row][c] == 0: break
@@ -160,10 +162,27 @@ def sort_move(moves, player):
 				for r in range(row + 1, grid_size, 1):
 					if player.grid_state[r][col] == 0: break
 					else: right += 1
-				score_inc += 2 + left + right + above + below
-				if (above == 0 and below == 0) or (left == 0 and right == 0):
-					score_inc -= 1
-				score += score_inc + 2
+
+				if (row != 0) and (not (col != 0 and player.grid_state[row - 1][col - 1] == 1) or (col != grid_size - 1 and player.grid_state[row - 1][col + 1] == 1)):
+					score += abs(1 - player.grid_state[row - 1][col])
+				if (row != grid_size - 1) and (not (col != 0 and player.grid_state[row + 1][col - 1] == 1) or (col != grid_size - 1 and player.grid_state[row + 1][col + 1] == 1)):
+					score += abs(1 - player.grid_state[row + 1][col])
+				if (col != 0) and (not (row != 0 and player.grid_state[row - 1][col - 1] == 1) or (row != grid_size - 1 and player.grid_state[row + 1][col - 1] == 1)):
+					score += abs(1 - player.grid_state[row][col - 1])
+				if (col != grid_size - 1) and (not (row != 0 and player.grid_state[row - 1][col + 1] == 1) or (row != grid_size - 1 and player.grid_state[row + 1][col + 1] == 1)):
+					score += abs(1 - player.grid_state[row][col + 1])
+
+				if (row > above): score += below + 1
+				if (row + below < grid_size - 1): score += above + 1
+				if (col > left): score += right + 1
+				if (col + right < grid_size - 1): score += left + 1
+				score += 1 + above + below + left + right + length_bonus[above + below] + length_bonus[left + right]
+
+				if (above + below == 3): score += player.COL_BONUS
+				if (left + right == 3): score += player.ROW_BONUS
+
+				if (above != 0 or below != 0) and (left != 0 and right != 0):
+					score += 1
 
 				flag = True
 				for c in range(grid_size):

@@ -6,7 +6,7 @@ from operator import itemgetter
 import sys
 
 sys.path.append('players/SongFenTongZi/')
-MAX_INDEX = 4
+MAX_INDEX = 8
 FUTURE = 0.35
 
 
@@ -15,7 +15,7 @@ class myPlayer(AdvancePlayer):
 		super().__init__(_id)
 
 	def SelectMove(self, moves, game_state):
-		return min_max_search(Azul, State(game_state), 6, self.id)
+		return min_max_search(Azul, State(game_state), 4, self.id)
 
 
 class State:
@@ -57,8 +57,9 @@ class Azul:
 
 
 def state_eval(graph, state, player):
-	score_1 = _get_player_score(state.game_state.players[player])
-	score_2 = _get_player_score(state.game_state.players[abs(1 - player)])
+	round_number = max([sum(state.game_state.players[player].grid_state[r][c] for c in range(5)) for r in range(5)]) + 1
+	score_1 = _get_player_score(state.game_state.players[player], round_number)
+	score_2 = _get_player_score(state.game_state.players[abs(1 - player)], round_number)
 	if graph.is_goal(state):
 		if score_1 > score_2:
 			return score_1 - score_2 + 1000
@@ -69,16 +70,16 @@ def state_eval(graph, state, player):
 	return score_1 - score_2
 
 
-def _get_player_score(player):
+def _get_player_score(player, round_number):
 	score_inc = 0
+	future_score = 0
 	grid_size = player.GRID_SIZE
 	number_of = copy(player.number_of)
 	grid_state = deepcopy(player.grid_state)
 	for row in range(grid_size):
+		tc = player.lines_tile[row]
+		col = int(player.grid_scheme[row][tc])
 		if player.lines_number[row] == row + 1:
-			tc = player.lines_tile[row]
-			col = int(player.grid_scheme[row][tc])
-
 			number_of[tc] += 1
 			grid_state[row][col] = 1
 
@@ -104,6 +105,37 @@ def _get_player_score(player):
 			if (above == 0 and below == 0) or (left == 0 and right == 0):
 				score_inc -= 1
 
+			if round_number < 5:
+				if above + below == 3: future_score += player.COL_BONUS
+				if left + right == 3: future_score += player.ROW_BONUS
+				if number_of[tc] == grid_size - 2: future_score += player.SET_BONUS
+
+				if (row != 0) and (not (col != 0 and grid_state[row - 1][col - 1] == 1) or (
+						col != grid_size - 1 and grid_state[row - 1][col + 1] == 1)):
+					future_score += abs(1 - grid_state[row - 1][col]) / 2
+				if (row != grid_size - 1) and (not (col != 0 and grid_state[row + 1][col - 1] == 1) or (
+						col != grid_size - 1 and grid_state[row + 1][col + 1] == 1)):
+					future_score += abs(1 - grid_state[row + 1][col]) / 2
+				if (col != 0) and (not (row != 0 and grid_state[row - 1][col - 1] == 1) or (
+						row != grid_size - 1 and grid_state[row + 1][col - 1] == 1)):
+					future_score += abs(1 - grid_state[row][col - 1]) / 2
+				if (col != grid_size - 1) and (not (row != 0 and grid_state[row - 1][col + 1] == 1) or (
+						row != grid_size - 1 and grid_state[row + 1][col + 1] == 1)):
+					future_score += abs(1 - grid_state[row][col + 1]) / 2
+
+				if row > above: future_score += below + 1
+				if row + below < grid_size - 1: future_score += above + 1
+				if col > left: future_score += right + 1
+				if col + right < grid_size - 1: future_score += left + 1
+
+				for r in range(grid_size):
+					for c in range(grid_size):
+						if grid_state[r][c] == 1:
+							future_score += 1 / ((abs(row - r) + 1) * (abs(col - c) + 1))
+		elif player.lines_number[row] > 0:
+			if round_number < 5:
+				future_score += sum(grid_state[r][col] for r in range(grid_size)) + sum(grid_state[row][c] for c in range(grid_size))
+
 	penalties = 0
 	for i in range(len(player.floor)):
 		penalties += player.floor[i] * player.FLOOR_SCORES[i]
@@ -111,6 +143,8 @@ def _get_player_score(player):
 	score_change = score_inc + penalties
 	if player.score < -score_change:
 		score_change = -player.score
+
+	score_change += future_score * FUTURE
 
 	rows = 0
 	for i in range(grid_size):
@@ -135,6 +169,7 @@ def _get_player_score(player):
 
 def sort_move(moves, player):
 	grid_size = player.GRID_SIZE
+	round_number = max([sum(player.grid_state[r][c] for c in range(grid_size)) for r in range(grid_size)]) + 1
 	number_of = copy(player.number_of)
 	for r in range(grid_size):
 		if player.lines_number[r] == r + 1:
@@ -156,7 +191,8 @@ def sort_move(moves, player):
 		for i in range(move[2].num_to_floor_line):
 			if i + penalty_index < len(player.floor):
 				score += player.FLOOR_SCORES[i + penalty_index]
-		future_score += addition_floor_penalty[min(len(player.floor) - 1, penalty_index + move[2].num_to_floor_line)]
+		if round_number < 5:
+			future_score += addition_floor_penalty[min(len(player.floor) - 1, penalty_index + move[2].num_to_floor_line)]
 		if row != -1:
 			tc = move[2].tile_type
 			col = int(player.grid_scheme[row][tc])
@@ -183,28 +219,29 @@ def sort_move(moves, player):
 					if grid_state[row][c] == 0: break
 					else: right += 1
 
-				if above + below == 3: future_score += player.COL_BONUS
-				if left + right == 3: future_score += player.ROW_BONUS
-				if number_of[tc] == grid_size - 2: future_score += player.SET_BONUS
+				if round_number < 5:
+					if above + below == 3: future_score += player.COL_BONUS
+					if left + right == 3: future_score += player.ROW_BONUS
+					if number_of[tc] == grid_size - 2: future_score += player.SET_BONUS
 
-				if (row != 0) and (not (col != 0 and grid_state[row - 1][col - 1] == 1) or (col != grid_size - 1 and grid_state[row - 1][col + 1] == 1)):
-					future_score += abs(1 - grid_state[row - 1][col]) / 2
-				if (row != grid_size - 1) and (not (col != 0 and grid_state[row + 1][col - 1] == 1) or (col != grid_size - 1 and grid_state[row + 1][col + 1] == 1)):
-					future_score += abs(1 - grid_state[row + 1][col]) / 2
-				if (col != 0) and (not (row != 0 and grid_state[row - 1][col - 1] == 1) or (row != grid_size - 1 and grid_state[row + 1][col - 1] == 1)):
-					future_score += abs(1 - grid_state[row][col - 1]) / 2
-				if (col != grid_size - 1) and (not (row != 0 and grid_state[row - 1][col + 1] == 1) or (row != grid_size - 1 and grid_state[row + 1][col + 1] == 1)):
-					future_score += abs(1 - grid_state[row][col + 1]) / 2
+					if (row != 0) and (not (col != 0 and grid_state[row - 1][col - 1] == 1) or (col != grid_size - 1 and grid_state[row - 1][col + 1] == 1)):
+						future_score += abs(1 - grid_state[row - 1][col]) / 2
+					if (row != grid_size - 1) and (not (col != 0 and grid_state[row + 1][col - 1] == 1) or (col != grid_size - 1 and grid_state[row + 1][col + 1] == 1)):
+						future_score += abs(1 - grid_state[row + 1][col]) / 2
+					if (col != 0) and (not (row != 0 and grid_state[row - 1][col - 1] == 1) or (row != grid_size - 1 and grid_state[row + 1][col - 1] == 1)):
+						future_score += abs(1 - grid_state[row][col - 1]) / 2
+					if (col != grid_size - 1) and (not (row != 0 and grid_state[row - 1][col + 1] == 1) or (row != grid_size - 1 and grid_state[row + 1][col + 1] == 1)):
+						future_score += abs(1 - grid_state[row][col + 1]) / 2
 
-				if row > above: future_score += below + 1
-				if row + below < grid_size - 1: future_score += above + 1
-				if col > left: future_score += right + 1
-				if col + right < grid_size - 1: future_score += left + 1
+					if row > above: future_score += below + 1
+					if row + below < grid_size - 1: future_score += above + 1
+					if col > left: future_score += right + 1
+					if col + right < grid_size - 1: future_score += left + 1
 
-				for r in range(grid_size):
-					for c in range(grid_size):
-						if grid_state[r][c] == 1:
-							future_score += 1 / ((abs(row - r) + 1) * (abs(col - c) + 1))
+					for r in range(grid_size):
+						for c in range(grid_size):
+							if grid_state[r][c] == 1:
+								future_score += 1 / ((abs(row - r) + 1) * (abs(col - c) + 1))
 
 				score += 1 + above + below + left + right + future_score * FUTURE
 				if (above != 0 or below != 0) and (left != 0 and right != 0):

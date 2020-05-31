@@ -7,7 +7,7 @@ import sys
 
 sys.path.append('players/SongFenTongZi/')
 MAX_INDEX = 8
-FUTURE = 0.4
+FUTURE = 0.35
 
 
 class myPlayer(AdvancePlayer):

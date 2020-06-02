@@ -267,18 +267,10 @@ def sort_move(moves, player):
 			score += score_dest[row]
 		move_list.append((score, move))
 	move_list.sort(key = itemgetter(0), reverse = True)
-	moves, pre_move = [], None
+	moves = []
 	for i in range(length):
 		score, move = move_list[i]
-		if pre_move == None:
-			moves.append(move)
-			pre_move = move
-		else:
-			if pre_move[2].tile_type != move[2].tile_type or pre_move[2].pattern_line_dest != move[
-				2].pattern_line_dest or pre_move[2].num_to_pattern_line != move[2].num_to_pattern_line or pre_move[
-				2].num_to_floor_line != move[2].num_to_floor_line:
-				moves.append(move)
-				pre_move = move
+		moves.append(move)
 		if len(moves) == MAX_INDEX: break
 	return moves
 

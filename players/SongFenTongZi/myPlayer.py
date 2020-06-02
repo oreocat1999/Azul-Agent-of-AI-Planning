@@ -144,7 +144,8 @@ def _get_player_score(player, round_number):
 	if player.score < -score_change:
 		score_change = -player.score
 
-	score_change += future_score * FUTURE
+	if (round_number == 4): score_change += future_score * FUTURE / 2
+	else: score_change += future_score * FUTURE
 
 	rows = 0
 	for i in range(grid_size):

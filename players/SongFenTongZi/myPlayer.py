@@ -2,10 +2,12 @@ from advance_model import AdvancePlayer
 from copy import deepcopy, copy
 import random
 from utils import Tile
-from operator import attrgetter, itemgetter
+from operator import itemgetter
+import math
 
-MAX_INDEX = 10
-MAX_SCORE = 1000
+epsilon = 0.5
+MAX_INDEX = 5
+MAX_TURN = 3
 FUTURE = 0.4
 
 class myPlayer(AdvancePlayer):
@@ -13,7 +15,7 @@ class myPlayer(AdvancePlayer):
 		super().__init__(_id)
 
 	def SelectMove(self, moves, game_state):
-		return bfs_search(Azul, State(game_state), self.id, heuristic)
+		return monte_carlo_tree_search(Azul, State(game_state), 300, self.id)
 
 class State:
 	def __init__(self, game_state):
@@ -46,10 +48,6 @@ class Azul:
 	@staticmethod
 	def successors(state, player_id):
 		return state.game_state.players[player_id].GetAvailableMoves(state.game_state)
-
-	@staticmethod
-	def isGoal(state):
-		return state.game_state.players[0].GetCompletedRows() > 0 or state.game_state.players[1].GetCompletedRows() > 0
 
 def state_eval(graph, state, player):
 	round_number = max([sum(state.game_state.players[player].grid_state[r][c] for c in range(5)) for r in range(5)]) + 1
@@ -261,45 +259,83 @@ def sort_move(moves, player):
 		if len(moves) == MAX_INDEX: break
 	return moves
 
-def heuristic(Graph, state, player):
-	value = state_eval(Graph, state, player)
-	return MAX_SCORE - value
+beta = 1
 
 class Node:
-
-	def __init__(self, state, cost, parent, move, round_end):
+	def __init__(self, state, score, visit, parent, visit_child, wait_child, move, round_end):
 		self.state = state
-		self.cost = cost
+		self.score = score
+		self.visit = visit
 		self.parent = parent
+		self.visit_child = visit_child
+		self.wait_child = wait_child
 		self.move = move
 		self.round_end = round_end
 
-def answer_find(node):
-	while node.parent.parent != None:
-		node = node.parent
-	return node.move
+def _tree_policy(Graph, node, root_player, player):
+	while not node.round_end:
+		player = abs(1 - player)
+		if node.wait_child:
+			expand_node = node.wait_child.pop(0)
+			node.visit_child.append(expand_node)
+			_expand(Graph, expand_node, player)
+			return expand_node, player
+		else:
+			if player != root_player: node.visit_child.sort(key = _MCTS_sort, reverse = True)
+			else: node.visit_child.sort(key = _MCTS_sort, reverse = False)
+			node = node.visit_child[0]
+	return node, player
 
-def bfs_search(Graph, state, player, heuristic):
-	init_node = Node(state, heuristic(Graph, state, player), None, None, False)
-	wait_list = [init_node]
-	while len(wait_list) != 0:
-		wait_list.sort(key = attrgetter('cost'))
-		label_cost = wait_list[0].cost
-		while len(wait_list) != 0:
-			if wait_list[0].cost != label_cost: break
-			else:
-				current_node = wait_list.pop(0)
-				if current_node.round_end: return answer_find(current_node)
-				moves = Graph.successors(current_node.state, player)
-				moves = sort_move(moves, current_node.state.game_state.players[player])
-				for move in moves:
-					new_state, round_end = current_node.state.next_state(player, move)
-					if round_end:
-						if current_node.parent == None:
-							return move
-						return answer_find(current_node)
-					new_moves = Graph.successors(new_state, abs(1 - player))
-					new_moves = sort_move(new_moves, new_state.game_state.players[abs(1 - player)])
-					new_state, round_end = new_state.next_state(abs(1 - player), random.choice(new_moves))
-					new_node = Node(new_state, heuristic(Graph, new_state, player), current_node, move, round_end)
-					wait_list.append(new_node)
+def _expand(Graph, node, player):
+	if node.state == None:
+		node.state, node.round_end = node.parent.state.next_state(abs(1 - player), node.move)
+	moves = Graph.successors(node.state, player)
+	moves = sort_move(moves, node.state.game_state.players[player])
+	for move in moves:
+		node.wait_child.append(Node(None, 0, 0, node, [], [], move, None))
+
+def _child_score(node, c):
+	if node.visit == 0:
+		return None
+	else:
+		return node.score / node.visit + c * math.sqrt(2 * math.log(node.parent.visit) / node.visit)
+
+def _MCTS_sort(node):
+	return _child_score(node, beta)
+
+def _MCTS_answer_sort(node):
+	return _child_score(node, 0)
+
+def _default_policy(Graph, node, root_player, player):
+	state = node.state
+	round_end = False
+	turn = 0
+	while not round_end:
+		moves = Graph.successors(state, player)
+		moves = sort_move(moves, state.game_state.players[player])
+		if moves == None or len(moves) == 0:
+			break
+		state, round_end = state.next_state(player, random.choice(moves))
+		player = abs(1 - player)
+		turn += 1
+		if turn == MAX_TURN: break
+	value = state_eval(Graph, state, root_player)
+	return value
+
+def _backup(node, reward):
+	while node is not None:
+		node.score += reward
+		node.visit += 1
+		node = node.parent
+
+def monte_carlo_tree_search(Graph, state, budget, player):
+	root_node = Node(state, 0, 0, None, [], [], None, False)
+	root_player = player
+	_expand(Graph, root_node, player)
+	while budget > 0:
+		expand_node, expand_player = _tree_policy(Graph, root_node, root_player, player)
+		reward = _default_policy(Graph, expand_node, root_player, expand_player)
+		_backup(expand_node, reward)
+		budget -= 1
+	root_node.visit_child.sort(key = _MCTS_answer_sort, reverse = True)
+	return root_node.visit_child[0].move

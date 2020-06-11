@@ -4,6 +4,7 @@ import random
 from utils import Tile
 from operator import itemgetter
 import sys
+import time
 
 sys.path.append('players/SongFenTongZi/')
 MAX_INDEX = 8
@@ -283,12 +284,15 @@ def min_max_search(graph, state, depth_limit, player):
 	return _max_node_value(graph, state, 0, depth_limit, player, alpha, beta)[0]
 
 def _max_node_value(graph, state, depth, depth_limit, player, alpha, beta):
+	start = time.clock()
 	depth += 1
 	moves = graph.successors(state, player)
 	moves = sort_move(moves, state.game_state.players[player])
 	best_move = random.choice(moves)
 	max_alpha = -float("inf")
 	for move in moves:
+		if time.clock() - start > 0.875:
+			return best_move, alpha
 		next_state, round_end = state.next_state(player, move)
 		if round_end or depth == depth_limit:
 			state_alpha = state_eval(next_state, player)
